@@ -52,6 +52,7 @@ export default function VoiceAssistant() {
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
   const [silenceTimer, setSilenceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [hasSpokenContent, setHasSpokenContent] = useState(false);
   const [costs, setCosts] = useState<CostCalculation>({
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
@@ -107,8 +108,8 @@ export default function VoiceAssistant() {
       if (recognitionRef.current) {
         const recognition = recognitionRef.current;
 
-        // Enhanced settings for better continuous listening
-        recognition.continuous = true; // Keep listening continuously
+        // Enhanced settings for natural speech detection
+        recognition.continuous = true; // Keep listening for natural speech flow
         recognition.interimResults = true; // Show interim results
         recognition.lang = "en-US";
         // TypeScript doesn't know about maxAlternatives, so we'll use type assertion
@@ -118,6 +119,7 @@ export default function VoiceAssistant() {
           setIsListening(true);
           setError("");
           finalTranscriptRef.current = "";
+          setHasSpokenContent(false);
         };
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -141,29 +143,37 @@ export default function VoiceAssistant() {
           // If we have final results, add to our final transcript
           if (finalTranscript) {
             finalTranscriptRef.current += finalTranscript;
+            setHasSpokenContent(true);
 
             // Clear any existing silence timer
             if (silenceTimer) {
               clearTimeout(silenceTimer);
             }
 
-            // Set a new timer to process speech after 2 seconds of silence
+            // Set a timer to process speech after 3 seconds of silence (more realistic)
             const newTimer = setTimeout(() => {
-              if (finalTranscriptRef.current.trim()) {
+              if (finalTranscriptRef.current.trim() && hasSpokenContent) {
                 handleUserInput(finalTranscriptRef.current.trim());
                 finalTranscriptRef.current = "";
+                setHasSpokenContent(false);
               }
-            }, 2000); // Wait 2 seconds after final speech
+            }, 3000); // Wait 3 seconds after final speech for natural pauses
 
             setSilenceTimer(newTimer);
+          }
+
+          // If we have interim results, it means the user is still speaking
+          if (interimTranscript && silenceTimer) {
+            clearTimeout(silenceTimer);
+            setSilenceTimer(null);
           }
         };
 
         recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
           console.log("Speech recognition error:", event.error);
 
-          // Don't stop on network errors, just continue
-          if (event.error === "network") {
+          // Don't stop on network errors or no-speech errors, just continue
+          if (event.error === "network" || event.error === "no-speech") {
             return;
           }
 
@@ -209,13 +219,14 @@ export default function VoiceAssistant() {
       recognitionRef.current?.stop();
       synthRef.current?.cancel();
     };
-  }, [isListening, isProcessing, silenceTimer]);
+  }, [isListening, isProcessing, silenceTimer, hasSpokenContent]);
 
   const startListening = () => {
     if (recognitionRef.current && !isListening) {
       setTranscript("");
       setError("");
       finalTranscriptRef.current = "";
+      setHasSpokenContent(false);
 
       try {
         recognitionRef.current.start();
@@ -241,6 +252,7 @@ export default function VoiceAssistant() {
       handleUserInput(finalTranscriptRef.current.trim());
       finalTranscriptRef.current = "";
     }
+    setHasSpokenContent(false);
   };
 
   const handleUserInput = async (input: string) => {
@@ -622,10 +634,10 @@ export default function VoiceAssistant() {
               {isListening && (
                 <div className="text-center">
                   <p className="text-green-600 font-medium animate-pulse text-lg">
-                    🎤 Listening continuously...
+                    🎤 Listening...
                   </p>
                   <p className="text-sm text-slate-500 mt-1">
-                    Take your time, I'll wait for you to finish speaking
+                    Take your time, I'll wait for natural pauses in your speech
                   </p>
                 </div>
               )}
@@ -654,7 +666,8 @@ export default function VoiceAssistant() {
                     Ready to practice English conversation!
                   </p>
                   <p className="text-sm text-slate-500 mt-1">
-                    Click the microphone to start speaking
+                    Click the microphone and speak naturally - I'll detect when
+                    you're done
                   </p>
                 </div>
               )}
@@ -666,7 +679,7 @@ export default function VoiceAssistant() {
                 <p className="text-blue-800 italic text-left">"{transcript}"</p>
                 {isListening && (
                   <p className="text-xs text-blue-600 mt-2">
-                    Continue speaking... I'm listening for pauses
+                    Continue speaking naturally... I'll process after you pause
                   </p>
                 )}
               </div>
@@ -743,12 +756,12 @@ export default function VoiceAssistant() {
           <div className="grid md:grid-cols-2 gap-4 text-left">
             <div>
               <p>
-                • <strong>Continuous Listening:</strong> I'll keep listening
-                even during pauses and "umm"s
-              </p>
-              <p>
                 • <strong>Natural Speech:</strong> Take your time, hesitate
                 naturally - it's part of learning
+              </p>
+              <p>
+                • <strong>Smart Pauses:</strong> I allow for natural pauses and
+                process after you finish
               </p>
             </div>
             <div>
@@ -761,6 +774,12 @@ export default function VoiceAssistant() {
                 general conversation
               </p>
             </div>
+          </div>
+          <div className="mt-3 text-center">
+            <p className="text-xs text-slate-500">
+              💡 I wait 3 seconds after you stop speaking to process your
+              response - perfect for natural conversation flow
+            </p>
           </div>
         </div>
       </div>
